@@ -1,0 +1,89 @@
+AWSTemplateFormatVersion: "2010-09-09"
+
+Parameters:
+    pathPrefix:
+      Type: String
+    ecsTaskImage:
+      Type: String
+    albPrio:
+      Type: Number
+
+Resources:
+  ecsTaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Family: !Ref AWS::StackName
+      ContainerDefinitions:
+        - Image: !Ref ecsTaskImage
+          Name: main
+          Environment:
+            - Name: PORT
+              Value: 80
+            - Name: LOADBALANCER_PREFIX
+              Value: !Sub "/${pathPrefix}"
+          PortMappings:
+            - ContainerPort: 80
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !ImportValue ecsLogGroup
+              awslogs-stream-prefix: !Ref AWS::StackName
+              awslogs-region: !Ref AWS::Region
+      Cpu: 256
+      ExecutionRoleArn: !ImportValue ecsTaskExecutionRole
+      Memory: 512
+      NetworkMode: awsvpc
+      RequiresCompatibilities:
+        - FARGATE
+      TaskRoleArn: !ImportValue ecsTaskExecutionRole
+
+  lbTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      HealthCheckEnabled: true
+      HealthCheckIntervalSeconds: 30
+      HealthCheckPath: !Sub "/${pathPrefix}/health"
+      HealthCheckTimeoutSeconds: 2
+      HealthyThresholdCount: 2
+      Port: 80
+      Protocol: HTTP
+      TargetType: ip
+      UnhealthyThresholdCount: 2
+      VpcId: !ImportValue vpc
+
+  lbListenerRule:
+    Type: AWS::ElasticLoadBalancingV2::ListenerRule
+    Properties:
+      Conditions:
+        - Field: path-pattern
+          Values:
+            - !Sub "/${pathPrefix}*"
+      Actions:
+        - Type: forward
+          ForwardConfig:
+            TargetGroups:
+              - TargetGroupArn: !Ref lbTargetGroup
+      ListenerArn: !ImportValue albListener
+      Priority: !Ref albPrio
+
+  ecsService:
+    Type: AWS::ECS::Service
+    Properties:
+      ServiceName: !Ref AWS::StackName
+      Cluster: !ImportValue ecsCluster
+      DesiredCount: 1
+      LaunchType: FARGATE
+      LoadBalancers:
+        - ContainerPort: 80
+          ContainerName: main
+          TargetGroupArn: !Ref lbTargetGroup
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          AssignPublicIp: DISABLED
+          SecurityGroups:
+            - !ImportValue albSecurityGroup
+          Subnets:
+            - !ImportValue privateSubnetA
+            - !ImportValue privateSubnetB
+      PlatformVersion: LATEST
+      TaskDefinition:  !Ref ecsTaskDefinition

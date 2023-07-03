@@ -1,0 +1,92 @@
+AWSTemplateFormatVersion: "2010-09-09"
+
+Parameters:
+  hostedZoneId:
+    Type: String
+
+  domainName:
+    Type: String
+
+Resources:
+  acmCertificate:
+    Type: AWS::CertificateManager::Certificate
+    Properties:
+      DomainName: !Ref domainName
+      ValidationMethod: DNS
+      DomainValidationOptions:
+        - DomainName: !Ref domainName
+          HostedZoneId: !Ref hostedZoneId
+
+  route53RecordA:
+    Type: AWS::Route53::RecordSet
+    Properties:
+      Name: !Ref domainName
+      Type: A
+      AliasTarget:
+        DNSName: !GetAtt loadBalancer.DNSName
+        HostedZoneId: !GetAtt loadBalancer.CanonicalHostedZoneID
+      HostedZoneId: !Ref hostedZoneId
+
+  securityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      VpcId: !ImportValue vpc # from base-infra-vpc
+      GroupDescription: Allows traffic for ALB
+      SecurityGroupIngress:
+        - CidrIp: 0.0.0.0/0
+          IpProtocol: tcp
+          Description: Allow inbound HTTP from anywhere
+          FromPort: 80
+          ToPort: 80
+        - CidrIp: 0.0.0.0/0
+          IpProtocol: tcp
+          Description: Allow inbound HTTPS from anywhere
+          FromPort: 443
+          ToPort: 443
+      SecurityGroupEgress:
+        - CidrIp: 0.0.0.0/0
+          Description: Allow all outbound traffic
+          IpProtocol: -1
+          FromPort: -1
+          ToPort: -1
+
+  loadBalancer:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Name: !Ref AWS::StackName
+      Type: application
+      IpAddressType: ipv4
+      Scheme: internet-facing
+      SecurityGroups:
+        # - !ImportValue vpcSecurityGroup # from base-infra-vpc
+        - !Ref securityGroup
+      Subnets:
+        - !ImportValue publicSubnetA # from base-infra-vpc
+        - !ImportValue publicSubnetB # from base-infra-vpc
+
+  defaultListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      LoadBalancerArn: !Ref loadBalancer
+      # Port: 80
+      # Protocol: HTTP
+      Port: 443
+      Protocol: HTTPS
+      Certificates:
+        - CertificateArn: !Ref acmCertificate
+      DefaultActions:
+        - Type: fixed-response
+          FixedResponseConfig:
+            StatusCode: 200
+            ContentType: text/plain
+            MessageBody: Hello World!
+
+Outputs:
+  albListener:
+    Value: !Ref defaultListener
+    Export:
+      Name: albListener
+  securityGroup:
+    Value: !Ref securityGroup
+    Export:
+      Name: albSecurityGroup

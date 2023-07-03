@@ -1,0 +1,72 @@
+AWSTemplateFormatVersion: "2010-09-09"
+
+Resources:
+  ecrRepository:
+    Type: AWS::ECR::Repository
+    Properties:
+      RepositoryName: !Sub "${AWS::StackName}-services"
+      ImageTagMutability: MUTABLE
+      LifecyclePolicy:
+        LifecyclePolicyText: '{"rules":[{"rulePriority":1,"description":"Expire images older than 14 days","selection":{"tagStatus":"any","countType":"sinceImagePushed","countUnit":"days","countNumber":14},"action":{"type":"expire"}}]}'
+
+  privateLinkEcrApi:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      ServiceName: !Sub "com.amazonaws.${AWS::Region}.ecr.api"
+      PrivateDnsEnabled: true
+      VpcId: !ImportValue vpc
+      SecurityGroupIds:
+        - !ImportValue albSecurityGroup
+      SubnetIds:
+        - !ImportValue publicSubnetA
+        - !ImportValue publicSubnetB
+      VpcEndpointType: Interface
+
+  privateLinkEcrDkr:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      ServiceName: !Sub "com.amazonaws.${AWS::Region}.ecr.dkr"
+      PrivateDnsEnabled: true
+      VpcId: !ImportValue vpc
+      SecurityGroupIds:
+        - !ImportValue albSecurityGroup
+      SubnetIds:
+        - !ImportValue publicSubnetA
+        - !ImportValue publicSubnetB
+      VpcEndpointType: Interface
+
+  privateLinkEcrLogs:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      ServiceName: !Sub "com.amazonaws.${AWS::Region}.logs"
+      PrivateDnsEnabled: true
+      VpcId: !ImportValue vpc
+      SecurityGroupIds:
+        - !ImportValue albSecurityGroup
+      SubnetIds:
+        - !ImportValue publicSubnetA
+        - !ImportValue publicSubnetB
+      VpcEndpointType: Interface
+
+  privateLinkEcrS3:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      ServiceName: !Sub "com.amazonaws.${AWS::Region}.s3"
+      VpcId: !ImportValue vpc
+      SecurityGroupIds:
+        - !ImportValue albSecurityGroup
+      SubnetIds:
+        - !ImportValue publicSubnetA
+        - !ImportValue publicSubnetB
+      VpcEndpointType: Interface
+
+  privateLinkEcrS3Gw:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      ServiceName: !Sub "com.amazonaws.${AWS::Region}.s3"
+      VpcId: !ImportValue vpc
+      RouteTableIds:
+        - !ImportValue publicRouteTable
+        - !ImportValue privateRouteTableA
+        - !ImportValue privateRouteTableB
+      VpcEndpointType: Gateway

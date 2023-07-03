@@ -1,0 +1,243 @@
+AWSTemplateFormatVersion: "2010-09-09"
+
+
+Resources:
+    vpc:
+      Type: AWS::EC2::VPC
+      Properties:
+        CidrBlock: 10.0.0.0/16
+        InstanceTenancy: default
+        EnableDnsHostnames: true
+        EnableDnsSupport: true
+
+    #
+    # Private/public Subnets
+    # NOTE: We only use 2x2 AZs, this is enough for our purposes and helps to reduce cost
+    #
+
+    publicSubnetA:
+      Type: AWS::EC2::Subnet
+      Properties:
+        CidrBlock: 10.0.0.0/22
+        AvailabilityZone: !Sub "${AWS::Region}a"
+        VpcId: !Ref vpc
+
+    publicSubnetB:
+      Type: AWS::EC2::Subnet
+      Properties:
+        CidrBlock: 10.0.4.0/22
+        AvailabilityZone: !Sub "${AWS::Region}b"
+        VpcId: !Ref vpc
+
+    privateSubnetA:
+      Type: AWS::EC2::Subnet
+      Properties:
+        CidrBlock: 10.0.8.0/22
+        AvailabilityZone: !Sub "${AWS::Region}a"
+        VpcId: !Ref vpc
+
+    privateSubnetB:
+      Type: AWS::EC2::Subnet
+      Properties:
+        CidrBlock: 10.0.12.0/22
+        AvailabilityZone: !Sub "${AWS::Region}b"
+        VpcId: !Ref vpc
+
+
+    #
+    # NAT to public subnets
+    #
+
+    publicIpAddrA:
+      Type: AWS::EC2::EIP
+
+    publicIpAddrB:
+      Type: AWS::EC2::EIP
+
+    natGatewayA:
+      Type: AWS::EC2::NatGateway
+      Properties:
+        ConnectivityType: public
+        AllocationId: !GetAtt publicIpAddrA.AllocationId
+        SubnetId: !Ref publicSubnetA
+
+    natGatewayB:
+      Type: AWS::EC2::NatGateway
+      Properties:
+        ConnectivityType: public
+        AllocationId: !GetAtt publicIpAddrB.AllocationId
+        SubnetId: !Ref publicSubnetB
+
+    #
+    # Internet Gateway
+    #
+
+    internetGateway:
+      Type: AWS::EC2::InternetGateway
+
+    internetGatewayAttachment:
+      Type: AWS::EC2::VPCGatewayAttachment
+      Properties:
+        VpcId: !Ref vpc
+        InternetGatewayId: !Ref internetGateway
+
+
+    #
+    # Routing
+    #
+
+    publicRouteTable:
+      Type: AWS::EC2::RouteTable
+      Properties:
+        VpcId: !Ref vpc
+
+    privateRouteTableA:
+      Type: AWS::EC2::RouteTable
+      Properties:
+        VpcId: !Ref vpc
+
+    privateRouteTableB:
+      Type: AWS::EC2::RouteTable
+      Properties:
+        VpcId: !Ref vpc
+
+    subnetRoutePublicA:
+      Type: AWS::EC2::SubnetRouteTableAssociation
+      Properties:
+        RouteTableId: !Ref publicRouteTable
+        SubnetId: !Ref publicSubnetA
+
+    subnetRoutePublicB:
+      Type: AWS::EC2::SubnetRouteTableAssociation
+      Properties:
+        RouteTableId: !Ref publicRouteTable
+        SubnetId: !Ref publicSubnetB
+
+    subnetRoutePrivateA:
+      Type: AWS::EC2::SubnetRouteTableAssociation
+      Properties:
+        RouteTableId: !Ref privateRouteTableA
+        SubnetId: !Ref privateSubnetA
+
+    subnetRoutePrivateB:
+      Type: AWS::EC2::SubnetRouteTableAssociation
+      Properties:
+        RouteTableId: !Ref privateRouteTableB
+        SubnetId: !Ref privateSubnetB
+
+    publicRouteToInternet:
+      Type: AWS::EC2::Route
+      Properties:
+        DestinationCidrBlock: 0.0.0.0/0
+        RouteTableId: !Ref publicRouteTable
+        GatewayId: !Ref internetGateway
+
+    privateRouteToNatA:
+      Type: AWS::EC2::Route
+      Properties:
+        DestinationCidrBlock: 0.0.0.0/0
+        RouteTableId: !Ref privateRouteTableA
+        NatGatewayId: !Ref natGatewayA
+
+    privateRouteToNatB:
+      Type: AWS::EC2::Route
+      Properties:
+        DestinationCidrBlock: 0.0.0.0/0
+        RouteTableId: !Ref privateRouteTableB
+        NatGatewayId: !Ref natGatewayB
+
+
+    #
+    # ACLs
+    #
+
+    aclEntryEgress:
+      Type: AWS::EC2::NetworkAclEntry
+      Properties:
+        CidrBlock: 0.0.0.0/0
+        Egress: true
+        Protocol: -1
+        RuleAction: allow
+        RuleNumber: 100
+        NetworkAclId: !GetAtt vpc.DefaultNetworkAcl
+
+    aclEntryIngress:
+      Type: AWS::EC2::NetworkAclEntry
+      Properties:
+        CidrBlock: 0.0.0.0/0
+        Egress: false
+        Protocol: -1
+        RuleAction: allow
+        RuleNumber: 100
+        NetworkAclId: !GetAtt vpc.DefaultNetworkAcl
+
+    aclPublicSubnetA:
+      Type: AWS::EC2::SubnetNetworkAclAssociation
+      Properties:
+        NetworkAclId: !GetAtt vpc.DefaultNetworkAcl
+        SubnetId: !Ref publicSubnetA
+
+    aclPublicSubnetB:
+      Type: AWS::EC2::SubnetNetworkAclAssociation
+      Properties:
+        NetworkAclId: !GetAtt vpc.DefaultNetworkAcl
+        SubnetId: !Ref publicSubnetB
+
+    aclPrivateSubnetA:
+      Type: AWS::EC2::SubnetNetworkAclAssociation
+      Properties:
+        NetworkAclId: !GetAtt vpc.DefaultNetworkAcl
+        SubnetId: !Ref privateSubnetA
+
+    aclPrivateSubnetB:
+      Type: AWS::EC2::SubnetNetworkAclAssociation
+      Properties:
+        NetworkAclId: !GetAtt vpc.DefaultNetworkAcl
+        SubnetId: !Ref privateSubnetB
+
+
+Outputs:
+  vpc:
+    Value: !Ref vpc
+    Export:
+      Name: vpc
+
+  securityGroup:
+    Value: !GetAtt vpc.DefaultSecurityGroup
+    Export:
+      Name: vpcSecurityGroup
+
+  publicSubnetA:
+    Value: !Ref publicSubnetA
+    Export:
+      Name: publicSubnetA
+
+  publicSubnetB:
+    Value: !Ref publicSubnetB
+    Export:
+      Name: publicSubnetB
+
+  privateSubnetA:
+    Value: !Ref privateSubnetA
+    Export:
+      Name: privateSubnetA
+
+  privateSubnetB:
+    Value: !Ref privateSubnetB
+    Export:
+      Name: privateSubnetB
+
+  publicRouteTable:
+    Value: !Ref publicRouteTable
+    Export:
+      Name: publicRouteTable
+
+  privateRouteTableA:
+    Value: !Ref privateRouteTableA
+    Export:
+      Name: privateRouteTableA
+
+  privateRouteTableB:
+    Value: !Ref privateRouteTableB
+    Export:
+      Name: privateRouteTableB

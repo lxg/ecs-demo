@@ -1,0 +1,47 @@
+AWSTemplateFormatVersion: "2010-09-09"
+
+Resources:
+  ecsCluster:
+    Type: AWS::ECS::Cluster
+    Properties:
+      ClusterName: !Sub "${AWS::StackName}-services"
+      CapacityProviders:
+        - FARGATE
+
+  ecsLogGroup:
+    Type: "AWS::Logs::LogGroup"
+    Properties:
+      LogGroupName: !Sub "/${AWS::StackName}/"
+      RetentionInDays: 7
+
+  ecsTaskExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "${AWS::StackName}-ecsTaskExecutionRole"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - ecs-tasks.amazonaws.com
+            Action:
+              - "sts:AssumeRole"
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy
+
+Outputs:
+  ecsCluster:
+    Value: !Ref ecsCluster
+    Export:
+      Name: ecsCluster
+
+  ecsTaskExecutionRole:
+    Value: !Ref ecsTaskExecutionRole
+    Export:
+      Name: ecsTaskExecutionRole
+
+  ecsLogGroup:
+    Value: !Ref ecsLogGroup
+    Export:
+      Name: ecsLogGroup
