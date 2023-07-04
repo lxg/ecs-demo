@@ -1,4 +1,4 @@
-FROM node:16-alpine
+FROM --platform=linux/amd64 node:16-alpine
 COPY . /srv/
 RUN cd /srv/ && \
     npm i --only=prod --no-audit
